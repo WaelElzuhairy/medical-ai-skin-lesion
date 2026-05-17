@@ -1,0 +1,89 @@
+{
+  "version_tag": "v2",
+  "test_samples": 1505,
+  "temperature_T": 0.7329561114311218,
+  "dx_labels": [
+    "akiec",
+    "bcc",
+    "bkl",
+    "df",
+    "mel",
+    "nv",
+    "vasc"
+  ],
+  "malignant_class_indices": [
+    0,
+    1,
+    4
+  ],
+  "seven_class": {
+    "accuracy": 0.4558139534883721,
+    "macro_f1": 0.44308156654405606,
+    "per_class": {
+      "akiec": {
+        "precision": 0.42857142857142855,
+        "recall": 0.43902439024390244,
+        "f1-score": 0.43373493975903615,
+        "support": 41.0
+      },
+      "bcc": {
+        "precision": 0.6018518518518519,
+        "recall": 0.7831325301204819,
+        "f1-score": 0.680628272251309,
+        "support": 83.0
+      },
+      "bkl": {
+        "precision": 0.5585585585585585,
+        "recall": 0.7654320987654321,
+        "f1-score": 0.6458333333333334,
+        "support": 162.0
+      },
+      "df": {
+        "precision": 0.04909560723514212,
+        "recall": 0.59375,
+        "f1-score": 0.09069212410501193,
+        "support": 32.0
+      },
+      "mel": {
+        "precision": 0.36156351791530944,
+        "recall": 0.676829268292683,
+        "f1-score": 0.4713375796178344,
+        "support": 164.0
+      },
+      "nv": {
+        "precision": 0.993993993993994,
+        "recall": 0.33033932135728544,
+        "f1-score": 0.4958801498127341,
+        "support": 1002.0
+      },
+      "vasc": {
+        "precision": 0.16981132075471697,
+        "recall": 0.8571428571428571,
+        "f1-score": 0.28346456692913385,
+        "support": 21.0
+      }
+    }
+  },
+  "binary_collapse": {
+    "accuracy": 0.8272425249169435,
+    "macro_f1": 0.7477111540941328,
+    "ece_raw": 0.08557474074569651,
+    "ece_calibrated": 0.029233994238400403,
+    "ece_target": 0.05,
+    "phase1_pass": true,
+    "per_class": {
+      "benign": {
+        "precision": 0.9223300970873787,
+        "recall": 0.8586688578471652,
+        "f1-score": 0.8893617021276595,
+        "support": 1217.0
+      },
+      "malignant": {
+        "precision": 0.5376344086021505,
+        "recall": 0.6944444444444444,
+        "f1-score": 0.6060606060606061,
+        "support": 288.0
+      }
+    }
+  }
+}

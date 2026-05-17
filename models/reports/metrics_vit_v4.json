@@ -1,0 +1,89 @@
+{
+  "version_tag": "vit_v4",
+  "test_samples": 3800,
+  "temperature_T": 0.583214282989502,
+  "dx_labels": [
+    "akiec",
+    "bcc",
+    "bkl",
+    "df",
+    "mel",
+    "nv",
+    "vasc"
+  ],
+  "malignant_class_indices": [
+    0,
+    1,
+    4
+  ],
+  "seven_class": {
+    "accuracy": 0.7386842105263158,
+    "macro_f1": 0.6310146486537089,
+    "per_class": {
+      "akiec": {
+        "precision": 0.7853881278538812,
+        "recall": 0.7678571428571429,
+        "f1-score": 0.7765237020316027,
+        "support": 224.0
+      },
+      "bcc": {
+        "precision": 0.8766859344894027,
+        "recall": 0.9118236472945892,
+        "f1-score": 0.8939096267190569,
+        "support": 499.0
+      },
+      "bkl": {
+        "precision": 0.7409200968523002,
+        "recall": 0.7786259541984732,
+        "f1-score": 0.7593052109181141,
+        "support": 393.0
+      },
+      "df": {
+        "precision": 0.07888631090487239,
+        "recall": 0.9444444444444444,
+        "f1-score": 0.145610278372591,
+        "support": 36.0
+      },
+      "mel": {
+        "precision": 0.8267090620031796,
+        "recall": 0.7658321060382917,
+        "f1-score": 0.7951070336391437,
+        "support": 679.0
+      },
+      "nv": {
+        "precision": 0.9588631264023935,
+        "recall": 0.6639047125841533,
+        "f1-score": 0.784577723378213,
+        "support": 1931.0
+      },
+      "vasc": {
+        "precision": 0.15079365079365079,
+        "recall": 1.0,
+        "f1-score": 0.2620689655172414,
+        "support": 38.0
+      }
+    }
+  },
+  "binary_collapse": {
+    "accuracy": 0.8963157894736842,
+    "macro_f1": 0.8858223233067661,
+    "ece_raw": 0.08650968295963188,
+    "ece_calibrated": 0.029954267677507904,
+    "ece_target": 0.05,
+    "phase1_pass": true,
+    "per_class": {
+      "benign": {
+        "precision": 0.8923257635082223,
+        "recall": 0.9503753127606339,
+        "f1-score": 0.9204361873990307,
+        "support": 2398.0
+      },
+      "malignant": {
+        "precision": 0.9044943820224719,
+        "recall": 0.8038516405135521,
+        "f1-score": 0.8512084592145015,
+        "support": 1402.0
+      }
+    }
+  }
+}

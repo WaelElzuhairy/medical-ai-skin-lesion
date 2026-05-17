@@ -1,0 +1,10 @@
+{
+  "version_tag": "v2",
+  "temperature": 0.7329561114311218,
+  "ece_before": 0.09889044413334372,
+  "ece_after": 0.03676843249535387,
+  "ece_target": 0.05,
+  "calibrated_on": "binary-collapse",
+  "n_bins": 15,
+  "n_samples": 1499
+}

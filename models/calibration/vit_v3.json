@@ -1,0 +1,10 @@
+{
+  "version_tag": "vit_v3",
+  "temperature": 0.6646267175674438,
+  "ece_before": 0.07944235356648766,
+  "ece_after": 0.03014982918898266,
+  "ece_target": 0.05,
+  "calibrated_on": "binary-collapse",
+  "n_bins": 15,
+  "n_samples": 1500
+}

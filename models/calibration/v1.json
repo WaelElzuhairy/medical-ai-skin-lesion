@@ -1,0 +1,9 @@
+{
+  "version_tag": "v1",
+  "temperature": 2.2015671730041504,
+  "ece_before": 0.054990932583808876,
+  "ece_after": 0.009959492206573484,
+  "ece_target": 0.05,
+  "n_bins": 15,
+  "n_samples": 1500
+}

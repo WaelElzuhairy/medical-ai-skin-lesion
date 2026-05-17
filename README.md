@@ -4,7 +4,7 @@ An end-to-end clinical decision-support prototype that classifies dermatoscopic 
 
 **Academic project — not a diagnostic tool.** Every output carries a mandatory clinical disclaimer.
 
----
+---  
 
 ## Key Results
 

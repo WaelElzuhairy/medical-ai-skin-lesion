@@ -3,11 +3,12 @@ Phase 2 Streamlit page — Full Agentic Report Pipeline.
 
 Upload an image + enter patient metadata → runs the full orchestration:
 
-  HIGH   → Diagnosis Agent + Evidence Agent + Guard + Report Agent → PDF-ready report
+  HIGH   → Diagnosis Agent + Evidence Agent + Guard + Report Agent → report
   MEDIUM → Uncertainty Agent → escalation banner
   LOW    → rejection message
 
-Supports ViT-Base-16, EfficientNet-B4, and VGG16 checkpoints.
+VGG16 always runs automatically alongside the primary model.
+If they disagree on binary label → escalation is forced regardless of tier.
 No free LLM narrative — the Report Agent fills template slots only.
 """
 
@@ -28,47 +29,38 @@ st.title("Phase 2 — Agentic Report")
 st.caption("Full pipeline: model → router → agents → guard → report")
 
 # ---------------------------------------------------------------------------
-# Sidebar: model selection
+# Sidebar: primary model (ViT or EfficientNet)
+# VGG16 always runs automatically for disagreement detection
 # ---------------------------------------------------------------------------
 vit_ckpts = sorted(config.CHECKPOINTS_DIR.glob("vit_*.pt"))             if config.CHECKPOINTS_DIR.exists() else []
 eff_ckpts = sorted(config.CHECKPOINTS_DIR.glob("efficientnet_b4_*.pt")) if config.CHECKPOINTS_DIR.exists() else []
-vgg_ckpts = [config.CHECKPOINTS_DIR / "vgg16.pt"] if (config.CHECKPOINTS_DIR / "vgg16.pt").exists() else []
-all_ckpts = vit_ckpts + eff_ckpts + vgg_ckpts
+primary_ckpts = vit_ckpts + eff_ckpts
 
-if not all_ckpts:
+if not primary_ckpts:
     st.error("No trained model found. Train a model first via `scripts/train_vit.py`.")
     st.stop()
 
-ckpt_names  = [p.name for p in all_ckpts]
+ckpt_names  = [p.name for p in primary_ckpts]
 default_idx = max((i for i, n in enumerate(ckpt_names) if n.startswith("vit_")), default=len(ckpt_names)-1)
-selected    = st.sidebar.selectbox("Model checkpoint", ckpt_names, index=default_idx)
+selected    = st.sidebar.selectbox("Primary model", ckpt_names, index=default_idx)
 ckpt_path   = config.CHECKPOINTS_DIR / selected
-
-is_vit = selected.startswith("vit_")
-is_vgg = selected == "vgg16.pt"
-is_eff = selected.startswith("efficientnet_b4_")
-
-if is_vit:
-    model_label = "ViT-Base-16"
-    version_tag = ckpt_path.stem.replace("vit_", "", 1)
-    arch_tag    = f"vit_{version_tag}"
-elif is_vgg:
-    model_label = "VGG16"
-    version_tag = "vgg16"
-    arch_tag    = "vgg16"
-else:
-    model_label = "EfficientNet-B4"
-    version_tag = ckpt_path.stem.replace("efficientnet_b4_", "", 1)
-    arch_tag    = version_tag
+is_vit      = selected.startswith("vit_")
+model_label = "ViT-Base-16" if is_vit else "EfficientNet-B4"
+version_tag = ckpt_path.stem.replace("vit_", "", 1) if is_vit else ckpt_path.stem.replace("efficientnet_b4_", "", 1)
+arch_tag    = f"vit_{version_tag}" if is_vit else version_tag
 
 st.sidebar.markdown(f"**Architecture:** {model_label}")
-st.sidebar.markdown(f"**LLM provider:** `{config.LLM_PROVIDER}` / `{config.GROQ_MODEL if config.LLM_PROVIDER == 'groq' else config.ANTHROPIC_MODEL}`")
+st.sidebar.markdown(f"**LLM:** `{config.LLM_PROVIDER}` / `{config.GROQ_MODEL if config.LLM_PROVIDER == 'groq' else config.ANTHROPIC_MODEL}`")
 
-if is_vgg:
-    st.sidebar.warning("VGG16 confidence is uncalibrated. The router will use raw softmax scores.")
+vgg_ckpt   = config.CHECKPOINTS_DIR / "vgg16.pt"
+vgg_exists = vgg_ckpt.exists()
+if vgg_exists:
+    st.sidebar.success("VGG16 active — disagreement detection on")
+else:
+    st.sidebar.caption("VGG16 not found — single model mode")
 
 # ---------------------------------------------------------------------------
-# Patient metadata form
+# Patient metadata
 # ---------------------------------------------------------------------------
 st.subheader("Patient Information")
 col1, col2, col3 = st.columns(3)
@@ -108,7 +100,9 @@ with col_meta:
     st.markdown(f"- Age: **{age}**")
     st.markdown(f"- Sex: **{sex}**")
     st.markdown(f"- Localization: **{localization}**")
-    st.markdown(f"- Model: **{model_label}**")
+    st.markdown(f"- Primary model: **{model_label}**")
+    if vgg_exists:
+        st.markdown("- Secondary model: **VGG16** (disagreement check)")
 
 st.divider()
 
@@ -117,39 +111,82 @@ st.divider()
 # ---------------------------------------------------------------------------
 if st.button("Run Agentic Pipeline", type="primary"):
 
-    # Step 1: Inference
-    with st.spinner("Running inference..."):
+    # ── Step 1: Primary model inference ─────────────────────────────────────
+    with st.spinner(f"Running {model_label}…"):
         if is_vit:
             from src.deep_learning.vit_infer import vit_infer
             result = vit_infer(loaded.image, ckpt_path, version_tag=arch_tag)
-        elif is_vgg:
-            from src.deep_learning.vgg_infer import vgg_infer
-            result = vgg_infer(loaded.image, ckpt_path)
         else:
             from src.deep_learning.infer import infer
             result = infer(loaded.image, ckpt_path, version_tag=arch_tag)
 
-    # Quick inference summary
+    # ── Step 2: VGG16 comparison ─────────────────────────────────────────────
+    vgg_result = None
+    models_disagree = False
+    if vgg_exists:
+        with st.spinner("Running VGG16 for disagreement check…"):
+            from src.deep_learning.vgg_infer import vgg_infer
+            vgg_result = vgg_infer(loaded.image, vgg_ckpt)
+        models_disagree = (result.predicted_label != vgg_result.predicted_label)
+
+    # ── Quick inference summary ───────────────────────────────────────────────
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Binary",            result.predicted_label.upper())
     m2.metric("Most likely dx",    result.predicted_dx.upper())
     m3.metric("Router confidence", f"{result.confidence:.2%}")
     m4.metric("Malignant prob",    f"{result.malignant_prob:.2%}")
 
-    if is_vgg:
-        st.caption("⚠️ VGG16 confidence is uncalibrated — router thresholds are less reliable.")
+    if vgg_result is not None:
+        if models_disagree:
+            st.error(
+                f"⚠️ **Model Disagreement Detected** — "
+                f"{model_label}: **{result.predicted_label.upper()}** ({result.confidence:.1%})  ·  "
+                f"VGG16: **{vgg_result.predicted_label.upper()}** ({vgg_result.confidence:.1%})  —  "
+                f"**Pipeline will escalate for clinician review regardless of confidence tier.**"
+            )
+        else:
+            st.success(
+                f"✅ Models agree: **{result.predicted_label.upper()}**  —  "
+                f"{model_label}: {result.confidence:.1%}  ·  VGG16: {vgg_result.confidence:.1%}"
+            )
 
-    # Step 2: Orchestrator
-    with st.spinner("Running agentic pipeline (Diagnosis → Evidence → Guard → Report)..."):
+    # ── Step 3: Orchestrator ─────────────────────────────────────────────────
+    with st.spinner("Running agentic pipeline (Diagnosis → Evidence → Guard → Report)…"):
         from src.agentic.orchestrator import run as orchestrate
         orch = orchestrate(result, metadata)
 
     st.divider()
 
-    # -----------------------------------------------------------------------
-    # LOW tier
-    # -----------------------------------------------------------------------
-    if orch.tier.value == "LOW":
+    # ── DISAGREEMENT OVERRIDE: force escalation regardless of tier ───────────
+    if models_disagree:
+        st.warning("### ⚠️ Clinician Review Required — Models Disagree")
+        st.markdown(
+            f"The two models reached **opposite binary conclusions** on this image:\n\n"
+            f"| Model | Prediction | Confidence | Trained on |\n"
+            f"|-------|-----------|------------|------------|\n"
+            f"| {model_label} | **{result.predicted_label.upper()}** | {result.confidence:.1%} | ISIC 2019 |\n"
+            f"| VGG16 | **{vgg_result.predicted_label.upper()}** | {vgg_result.confidence:.1%} | HAM10000 |\n\n"
+            f"This case **cannot be auto-reported**. A dermatologist must review before any clinical action."
+        )
+
+        with st.expander(f"{model_label} 7-class breakdown"):
+            for label, prob in zip(result.dx_labels, result.dx_probs):
+                badge = "🔴" if label in config.HAM10000_MALIGNANT_DX else "🟢"
+                tag   = " ⬅" if label == result.predicted_dx else ""
+                st.write(f"{badge} **{label.upper()}**{tag}")
+                st.progress(float(prob), text=f"{prob:.2%}")
+
+        with st.expander("VGG16 7-class breakdown"):
+            for label, prob in zip(vgg_result.dx_labels, vgg_result.dx_probs):
+                badge = "🔴" if label in config.HAM10000_MALIGNANT_DX else "🟢"
+                tag   = " ⬅" if label == vgg_result.predicted_dx else ""
+                st.write(f"{badge} **{label.upper()}**{tag}")
+                st.progress(float(prob), text=f"{prob:.2%}")
+
+        st.caption(config.CLINICAL_DISCLAIMER)
+
+    # ── LOW tier ─────────────────────────────────────────────────────────────
+    elif orch.tier.value == "LOW":
         st.error("Case Rejected — LOW Confidence")
         st.markdown(f"""
 **The model is genuinely uncertain about this image.**
@@ -162,9 +199,7 @@ This case cannot be auto-reported. Please submit for manual review.
         """)
         st.caption(config.CLINICAL_DISCLAIMER)
 
-    # -----------------------------------------------------------------------
-    # MEDIUM tier
-    # -----------------------------------------------------------------------
+    # ── MEDIUM tier ───────────────────────────────────────────────────────────
     elif orch.tier.value == "MEDIUM":
         st.warning("MEDIUM Confidence — Escalated to Clinician")
 
@@ -175,7 +210,7 @@ This case cannot be auto-reported. Please submit for manual review.
             st.markdown(f"**Escalation reason:** {esc.get('escalation_reason', '')}")
             st.markdown(f"**Recommended action:** {esc.get('recommended_action', '')}")
 
-            with st.expander("Ambiguities detected by model"):
+            with st.expander("Ambiguities detected"):
                 for amb in esc.get("ambiguities", []):
                     st.markdown(f"- {amb}")
 
@@ -189,16 +224,13 @@ This case cannot be auto-reported. Please submit for manual review.
 
         st.caption(config.CLINICAL_DISCLAIMER)
 
-    # -----------------------------------------------------------------------
-    # HIGH tier
-    # -----------------------------------------------------------------------
+    # ── HIGH tier ─────────────────────────────────────────────────────────────
     elif orch.tier.value == "HIGH":
         if orch.error:
             st.error(f"Pipeline error: {orch.error}")
 
         elif not orch.guard_passed:
             st.error("Report Blocked by Guard Agent")
-            st.markdown("**Reasons blocked:**")
             for reason in orch.guard_blocks:
                 st.markdown(f"- ❌ {reason}")
             with st.expander("Checks passed"):
@@ -220,7 +252,6 @@ This case cannot be auto-reported. Please submit for manual review.
             )
 
             st.divider()
-
             st.markdown("##### Agent Details")
             col_diag, col_ev = st.columns(2)
 
@@ -228,8 +259,8 @@ This case cannot be auto-reported. Please submit for manual review.
                 with st.expander("Diagnosis Agent", expanded=True):
                     if orch.diagnosis:
                         diag = orch.diagnosis
-                        agrees_icon = "✅" if diag.get("agrees") else "⚠️"
-                        st.markdown(f"{agrees_icon} **CNN agreement:** {diag.get('agrees')}")
+                        icon = "✅" if diag.get("agrees") else "⚠️"
+                        st.markdown(f"{icon} **CNN agreement:** {diag.get('agrees')}")
                         st.markdown(f"**Rationale:** {diag.get('rationale', '')}")
                         if diag.get("contradictions"):
                             st.markdown("**Contradictions noted:**")
@@ -252,12 +283,9 @@ This case cannot be auto-reported. Please submit for manual review.
                             for q in quotes:
                                 st.markdown(f"> {q.get('text', '')}")
                                 meta_str = []
-                                if q.get("doi"):
-                                    meta_str.append(f"DOI: `{q['doi']}`")
-                                if q.get("pub_date"):
-                                    meta_str.append(q["pub_date"])
-                                if meta_str:
-                                    st.caption(" | ".join(meta_str))
+                                if q.get("doi"):   meta_str.append(f"DOI: `{q['doi']}`")
+                                if q.get("pub_date"): meta_str.append(q["pub_date"])
+                                if meta_str: st.caption(" | ".join(meta_str))
 
             with st.expander("Guard Agent checks", expanded=False):
                 for r in orch.guard_reasons:

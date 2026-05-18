@@ -4,7 +4,8 @@
 # Data and model artifacts (large, regenerate from scripts)
 data/raw/
 data/processed/
-# chroma corpus is committed (29 MB) so HF Spaces has it at deploy time
+# chroma sqlite (26 MB) is downloaded at startup via startup.py
+data/corpus/chroma/chroma.sqlite3
 models/checkpoints/
 # Keep calibration JSONs (small), exclude logit caches (large)
 models/calibration/*.npz

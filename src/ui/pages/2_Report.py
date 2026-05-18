@@ -25,7 +25,11 @@ import config
 from src.input.image_loader import load_from_bytes
 
 st.set_page_config(page_title="Agentic Report", layout="wide")
-st.markdown("<style>html { overflow-y: scroll; }</style>", unsafe_allow_html=True)
+st.markdown("""<style>
+html { overflow-y: scroll !important; }
+body { overflow-y: scroll !important; }
+.main .block-container { overflow: visible !important; }
+</style>""", unsafe_allow_html=True)
 st.title("Phase 2 — Agentic Report")
 st.caption("Full pipeline: model → router → agents → guard → report")
 
@@ -95,7 +99,7 @@ loaded = load_from_bytes(uploaded.getvalue(), uploaded.name)
 
 col_img, col_meta = st.columns([1, 1])
 with col_img:
-    st.image(loaded.image, caption="Input image", use_column_width=True)
+    st.image(loaded.image, caption="Input image", use_container_width=True)
 with col_meta:
     st.markdown("**Patient summary**")
     st.markdown(f"- Age: **{age}**")
@@ -245,11 +249,22 @@ This case cannot be auto-reported. Please submit for manual review.
             st.subheader("Generated Report")
             st.markdown(orch.report)
 
+            # ── PDF download ─────────────────────────────────────────────────
+            with st.spinner("Generating PDF…"):
+                from src.output.pdf_writer import markdown_to_pdf
+                pdf_bytes = markdown_to_pdf(
+                    report_md      = orch.report,
+                    predicted_dx   = result.predicted_dx,
+                    predicted_label= result.predicted_label,
+                    confidence     = result.confidence,
+                    malignant_prob = result.malignant_prob,
+                    patient_meta   = metadata,
+                )
             st.download_button(
-                label="Download Report (.md)",
-                data=orch.report,
-                file_name=f"report_{result.predicted_dx}_{result.predicted_label}.md",
-                mime="text/markdown",
+                label="⬇  Download Report (PDF)",
+                data=pdf_bytes,
+                file_name=f"report_{result.predicted_dx}_{result.predicted_label}.pdf",
+                mime="application/pdf",
             )
 
             st.divider()

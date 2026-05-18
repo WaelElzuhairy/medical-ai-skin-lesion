@@ -20,7 +20,11 @@ import config
 from src.input.image_loader import load_from_bytes
 
 st.set_page_config(page_title="Analyze", layout="wide")
-st.markdown("<style>html { overflow-y: scroll; }</style>", unsafe_allow_html=True)
+st.markdown("""<style>
+html { overflow-y: scroll !important; }
+body { overflow-y: scroll !important; }
+.main .block-container { overflow: visible !important; }
+</style>""", unsafe_allow_html=True)
 st.title("Phase 1 — Analyze")
 
 # ---------------------------------------------------------------------------
@@ -99,7 +103,7 @@ with col_in:
     st.image(
         loaded.image,
         caption=f"{loaded.modality} — {loaded.metadata.get('filename')}",
-        use_column_width=True,
+        use_container_width=True,
     )
     if loaded.modality == "DICOM":
         st.json({k: v for k, v in loaded.metadata.items() if v is not None})
@@ -125,7 +129,7 @@ with st.spinner(f"Running {model_label}…"):
 
 with col_out:
     st.subheader(cam_label)
-    st.image(overlay, caption=f"Predicted: {result.predicted_dx.upper()}", use_column_width=True)
+    st.image(overlay, caption=f"Predicted: {result.predicted_dx.upper()}", use_container_width=True)
 
 # ---------------------------------------------------------------------------
 # Run VGG16 automatically if available

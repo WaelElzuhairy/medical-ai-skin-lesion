@@ -149,4 +149,5 @@ streamlit run src/ui/streamlit_app.py
 - ChromaDB · sentence-transformers (S-PubMedBERT-MS-MARCO)
 - Anthropic Claude (Haiku) · Groq (LLaMA-3.3-70B)
 - Streamlit · pytorch-grad-cam · albumentations
-- scikit-learn · pandas · numpy
+- scikit-learn . pandas . numpy
+- 

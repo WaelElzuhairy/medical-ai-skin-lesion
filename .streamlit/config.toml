@@ -1,0 +1,12 @@
+[server]
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+
+[browser]
+# Prevents the "disconnected" banner when the tab is idle
+gatherUsageStats = false
+
+[runner]
+# Suppress the torch.classes / ViT re-init warnings in the terminal
+magicEnabled = true

@@ -7,6 +7,7 @@ Upload an image + enter patient metadata → runs the full orchestration:
   MEDIUM → Uncertainty Agent → escalation banner
   LOW    → rejection message
 
+Supports ViT-Base-16, EfficientNet-B4, and VGG16 checkpoints.
 No free LLM narrative — the Report Agent fills template slots only.
 """
 
@@ -24,14 +25,15 @@ from src.input.image_loader import load_from_bytes
 
 st.set_page_config(page_title="Agentic Report", layout="wide")
 st.title("Phase 2 — Agentic Report")
-st.caption("Full pipeline: CNN → router → agents → guard → report")
+st.caption("Full pipeline: model → router → agents → guard → report")
 
 # ---------------------------------------------------------------------------
 # Sidebar: model selection
 # ---------------------------------------------------------------------------
-vit_ckpts = sorted(config.CHECKPOINTS_DIR.glob("vit_*.pt")) if config.CHECKPOINTS_DIR.exists() else []
+vit_ckpts = sorted(config.CHECKPOINTS_DIR.glob("vit_*.pt"))             if config.CHECKPOINTS_DIR.exists() else []
 eff_ckpts = sorted(config.CHECKPOINTS_DIR.glob("efficientnet_b4_*.pt")) if config.CHECKPOINTS_DIR.exists() else []
-all_ckpts = vit_ckpts + eff_ckpts
+vgg_ckpts = [config.CHECKPOINTS_DIR / "vgg16.pt"] if (config.CHECKPOINTS_DIR / "vgg16.pt").exists() else []
+all_ckpts = vit_ckpts + eff_ckpts + vgg_ckpts
 
 if not all_ckpts:
     st.error("No trained model found. Train a model first via `scripts/train_vit.py`.")
@@ -41,11 +43,29 @@ ckpt_names  = [p.name for p in all_ckpts]
 default_idx = max((i for i, n in enumerate(ckpt_names) if n.startswith("vit_")), default=len(ckpt_names)-1)
 selected    = st.sidebar.selectbox("Model checkpoint", ckpt_names, index=default_idx)
 ckpt_path   = config.CHECKPOINTS_DIR / selected
-is_vit      = selected.startswith("vit_")
-version_tag = ckpt_path.stem.replace("vit_", "", 1) if is_vit else ckpt_path.stem.replace("efficientnet_b4_", "", 1)
 
-st.sidebar.markdown(f"**Architecture:** {'ViT-Base-16' if is_vit else 'EfficientNet-B4'}")
+is_vit = selected.startswith("vit_")
+is_vgg = selected == "vgg16.pt"
+is_eff = selected.startswith("efficientnet_b4_")
+
+if is_vit:
+    model_label = "ViT-Base-16"
+    version_tag = ckpt_path.stem.replace("vit_", "", 1)
+    arch_tag    = f"vit_{version_tag}"
+elif is_vgg:
+    model_label = "VGG16"
+    version_tag = "vgg16"
+    arch_tag    = "vgg16"
+else:
+    model_label = "EfficientNet-B4"
+    version_tag = ckpt_path.stem.replace("efficientnet_b4_", "", 1)
+    arch_tag    = version_tag
+
+st.sidebar.markdown(f"**Architecture:** {model_label}")
 st.sidebar.markdown(f"**LLM provider:** `{config.LLM_PROVIDER}` / `{config.GROQ_MODEL if config.LLM_PROVIDER == 'groq' else config.ANTHROPIC_MODEL}`")
+
+if is_vgg:
+    st.sidebar.warning("VGG16 confidence is uncalibrated. The router will use raw softmax scores.")
 
 # ---------------------------------------------------------------------------
 # Patient metadata form
@@ -88,6 +108,7 @@ with col_meta:
     st.markdown(f"- Age: **{age}**")
     st.markdown(f"- Sex: **{sex}**")
     st.markdown(f"- Localization: **{localization}**")
+    st.markdown(f"- Model: **{model_label}**")
 
 st.divider()
 
@@ -95,21 +116,28 @@ st.divider()
 # Run pipeline
 # ---------------------------------------------------------------------------
 if st.button("Run Agentic Pipeline", type="primary"):
+
     # Step 1: Inference
     with st.spinner("Running inference..."):
         if is_vit:
             from src.deep_learning.vit_infer import vit_infer
-            result = vit_infer(loaded.image, ckpt_path, version_tag=f"vit_{version_tag}")
+            result = vit_infer(loaded.image, ckpt_path, version_tag=arch_tag)
+        elif is_vgg:
+            from src.deep_learning.vgg_infer import vgg_infer
+            result = vgg_infer(loaded.image, ckpt_path)
         else:
             from src.deep_learning.infer import infer
-            result = infer(loaded.image, ckpt_path, version_tag=version_tag)
+            result = infer(loaded.image, ckpt_path, version_tag=arch_tag)
 
-    # Show quick inference summary
+    # Quick inference summary
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Binary", result.predicted_label.upper())
-    m2.metric("Most likely dx", result.predicted_dx.upper())
+    m1.metric("Binary",            result.predicted_label.upper())
+    m2.metric("Most likely dx",    result.predicted_dx.upper())
     m3.metric("Router confidence", f"{result.confidence:.2%}")
-    m4.metric("Malignant prob", f"{result.malignant_prob:.2%}")
+    m4.metric("Malignant prob",    f"{result.malignant_prob:.2%}")
+
+    if is_vgg:
+        st.caption("⚠️ VGG16 confidence is uncalibrated — router thresholds are less reliable.")
 
     # Step 2: Orchestrator
     with st.spinner("Running agentic pipeline (Diagnosis → Evidence → Guard → Report)..."):
@@ -118,11 +146,9 @@ if st.button("Run Agentic Pipeline", type="primary"):
 
     st.divider()
 
-    # ---------------------------------------------------------------------------
-    # Render result by tier
-    # ---------------------------------------------------------------------------
-
-    # --- LOW tier: rejection ---
+    # -----------------------------------------------------------------------
+    # LOW tier
+    # -----------------------------------------------------------------------
     if orch.tier.value == "LOW":
         st.error("Case Rejected — LOW Confidence")
         st.markdown(f"""
@@ -136,7 +162,9 @@ This case cannot be auto-reported. Please submit for manual review.
         """)
         st.caption(config.CLINICAL_DISCLAIMER)
 
-    # --- MEDIUM tier: escalation ---
+    # -----------------------------------------------------------------------
+    # MEDIUM tier
+    # -----------------------------------------------------------------------
     elif orch.tier.value == "MEDIUM":
         st.warning("MEDIUM Confidence — Escalated to Clinician")
 
@@ -153,15 +181,17 @@ This case cannot be auto-reported. Please submit for manual review.
 
             with st.expander("Model output details"):
                 st.json({
-                    "predicted_dx":        esc.get("predicted_dx"),
-                    "predicted_binary":    esc.get("predicted_binary"),
-                    "confidence":          f"{esc.get('confidence_value', 0):.2%}",
+                    "predicted_dx":          esc.get("predicted_dx"),
+                    "predicted_binary":      esc.get("predicted_binary"),
+                    "confidence":            f"{esc.get('confidence_value', 0):.2%}",
                     "malignant_probability": f"{esc.get('malignant_probability', 0):.2%}",
                 })
 
         st.caption(config.CLINICAL_DISCLAIMER)
 
-    # --- HIGH tier: full report ---
+    # -----------------------------------------------------------------------
+    # HIGH tier
+    # -----------------------------------------------------------------------
     elif orch.tier.value == "HIGH":
         if orch.error:
             st.error(f"Pipeline error: {orch.error}")
@@ -177,10 +207,8 @@ This case cannot be auto-reported. Please submit for manual review.
 
         else:
             st.success("HIGH Confidence — Report Generated")
-
             st.divider()
 
-            # ---- Full report (shown first, prominently) ----
             st.subheader("Generated Report")
             st.markdown(orch.report)
 
@@ -193,9 +221,7 @@ This case cannot be auto-reported. Please submit for manual review.
 
             st.divider()
 
-            # ---- Agent details (collapsible) ----
             st.markdown("##### Agent Details")
-
             col_diag, col_ev = st.columns(2)
 
             with col_diag:

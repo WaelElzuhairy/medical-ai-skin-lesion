@@ -1,16 +1,12 @@
 """
 Phase 1 Streamlit page: upload an image, run the CNN, display:
-  - Original image
-  - Grad-CAM / attention heatmap
-  - Binary prediction (benign / malignant) with calibrated confidence
-  - Full 7-class dx breakdown with probability bars
+  - Original image + Grad-CAM / attention heatmap
+  - Binary prediction with calibrated confidence
+  - Full 7-class dx breakdown
   - Confidence tier preview (LOW / MEDIUM / HIGH)
 
-Supports both EfficientNet-B4 (efficientnet_b4_*.pt) and the locally
-trained ViT-Base-16 (vit_*.pt) checkpoints.  The correct inference
-function and Grad-CAM variant are selected automatically from the filename.
-
-No agentic layer is invoked here — this page validates the ML pipeline.
+Supports ViT-Base-16 (vit_*.pt), EfficientNet-B4 (efficientnet_b4_*.pt),
+and VGG16 (vgg16.pt). Model is selected from the sidebar dropdown.
 """
 
 from __future__ import annotations
@@ -25,7 +21,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import config
 from src.input.image_loader import load_from_bytes
 
-
 st.set_page_config(page_title="Analyze", layout="wide")
 st.title("Phase 1 — Analyze")
 
@@ -34,57 +29,53 @@ st.title("Phase 1 — Analyze")
 # ---------------------------------------------------------------------------
 eff_ckpts = sorted(config.CHECKPOINTS_DIR.glob("efficientnet_b4_*.pt")) if config.CHECKPOINTS_DIR.exists() else []
 vit_ckpts = sorted(config.CHECKPOINTS_DIR.glob("vit_*.pt"))             if config.CHECKPOINTS_DIR.exists() else []
-all_ckpts = eff_ckpts + vit_ckpts
+vgg_ckpts = [config.CHECKPOINTS_DIR / "vgg16.pt"] if (config.CHECKPOINTS_DIR / "vgg16.pt").exists() else []
+all_ckpts = eff_ckpts + vit_ckpts + vgg_ckpts
 
 if not all_ckpts:
     st.warning(
         "No trained model found in `models/checkpoints/`.\n\n"
-        "Train EfficientNet:\n"
-        "```\n"
-        "python scripts/prepare_ham10000.py\n"
-        "python scripts/train_cnn.py v2\n"
-        "python scripts/calibrate_model.py v2\n"
-        "```\n\n"
-        "Or train ViT:\n"
-        "```\n"
-        "python scripts/train_vit.py vit_v1\n"
-        "python scripts/calibrate_model.py vit_v1\n"
-        "```"
+        "Train ViT:\n```\npython scripts/train_vit.py vit_v4\n"
+        "python scripts/calibrate_model.py vit_v4\n```"
     )
     st.stop()
 
 ckpt_names = [p.name for p in all_ckpts]
 
-# Default to the latest ViT checkpoint if available, otherwise last entry
+# Default to the latest ViT checkpoint
 default_idx = len(ckpt_names) - 1
 for i, n in enumerate(ckpt_names):
     if n.startswith("vit_"):
-        default_idx = i   # keep updating -> ends on the last ViT
+        default_idx = i
 
-selected    = st.sidebar.selectbox("Model checkpoint", ckpt_names, index=default_idx)
-ckpt_path   = config.CHECKPOINTS_DIR / selected
-is_vit      = selected.startswith("vit_")
-model_label = "ViT-Base-16" if is_vit else "EfficientNet-B4"
+selected  = st.sidebar.selectbox("Model checkpoint", ckpt_names, index=default_idx)
+ckpt_path = config.CHECKPOINTS_DIR / selected
+is_vit    = selected.startswith("vit_")
+is_vgg    = selected == "vgg16.pt"
+is_eff    = selected.startswith("efficientnet_b4_")
 
-# Derive version tag from filename
 if is_vit:
+    model_label = "ViT-Base-16"
     version_tag = ckpt_path.stem.replace("vit_", "", 1)
+elif is_vgg:
+    model_label = "VGG16"
+    version_tag = "vgg16"
 else:
+    model_label = "EfficientNet-B4"
     version_tag = ckpt_path.stem.replace("efficientnet_b4_", "", 1)
 
 st.sidebar.markdown(f"**Architecture:** {model_label}")
-st.sidebar.markdown(f"**Version tag:** `{version_tag}`")
+if not is_vgg:
+    st.sidebar.markdown(f"**Version tag:** `{version_tag}`")
 
 
 # ---------------------------------------------------------------------------
-# Cached model / processor load
+# Cached loaders
 # ---------------------------------------------------------------------------
-
 @st.cache_resource(show_spinner="Loading EfficientNet checkpoint…")
 def _load_efficientnet(checkpoint: str):
     from src.deep_learning.model import load_checkpoint
     return load_checkpoint(Path(checkpoint))
-
 
 @st.cache_resource(show_spinner="Loading ViT checkpoint…")
 def _load_vit(checkpoint: str):
@@ -98,7 +89,7 @@ def _load_vit(checkpoint: str):
 
 
 # ---------------------------------------------------------------------------
-# Upload + analyze
+# Upload
 # ---------------------------------------------------------------------------
 uploaded = st.file_uploader(
     "Upload a dermatoscopic image (PNG/JPEG) or DICOM file",
@@ -112,7 +103,6 @@ if uploaded is None:
 loaded = load_from_bytes(uploaded.getvalue(), uploaded.name)
 
 col_in, col_out = st.columns(2)
-
 with col_in:
     st.subheader("Input")
     st.image(
@@ -123,29 +113,38 @@ with col_in:
     if loaded.modality == "DICOM":
         st.json({k: v for k, v in loaded.metadata.items() if v is not None})
 
-# --- Run inference ---
+# ---------------------------------------------------------------------------
+# Inference
+# ---------------------------------------------------------------------------
 with st.spinner("Running inference…"):
     if is_vit:
         from src.deep_learning.vit_infer import vit_infer
         from src.deep_learning.gradcam import generate_vit_heatmap
         result = vit_infer(loaded.image, ckpt_path, version_tag=version_tag)
         vit_model, vit_meta, vit_processor = _load_vit(str(ckpt_path))
-        overlay = generate_vit_heatmap(
-            vit_model, loaded.image, result.predicted_dx_idx, vit_processor
-        )
-        cam_caption = f"Attention map ({model_label}) — predicted dx: {result.predicted_dx.upper()}"
+        overlay    = generate_vit_heatmap(vit_model, loaded.image, result.predicted_dx_idx, vit_processor)
+        cam_label  = f"Attention Map ({model_label})"
+        cam_cap    = f"{cam_label} — predicted: {result.predicted_dx.upper()}"
+
+    elif is_vgg:
+        from src.deep_learning.vgg_infer import vgg_infer
+        result  = vgg_infer(loaded.image, ckpt_path)
+        overlay = loaded.image          # no Grad-CAM implemented for VGG16 yet
+        cam_label = "Input image (no heatmap for VGG16)"
+        cam_cap   = f"VGG16 — predicted: {result.predicted_dx.upper()}"
+
     else:
         from src.deep_learning.infer import infer
         from src.deep_learning.gradcam import generate_heatmap
-        result = infer(loaded.image, ckpt_path, version_tag=version_tag)
+        result    = infer(loaded.image, ckpt_path, version_tag=version_tag)
         eff_model, _ = _load_efficientnet(str(ckpt_path))
-        overlay = generate_heatmap(eff_model, loaded.image, result.predicted_dx_idx)
-        cam_caption = f"Grad-CAM ({model_label}) — predicted dx: {result.predicted_dx.upper()}"
+        overlay   = generate_heatmap(eff_model, loaded.image, result.predicted_dx_idx)
+        cam_label = f"Grad-CAM ({model_label})"
+        cam_cap   = f"{cam_label} — predicted: {result.predicted_dx.upper()}"
 
-# --- Heatmap ---
 with col_out:
-    st.subheader("Grad-CAM" if not is_vit else "Attention Map")
-    st.image(overlay, caption=cam_caption, use_column_width=True)
+    st.subheader(cam_label)
+    st.image(overlay, caption=cam_cap, use_column_width=True)
 
 st.divider()
 
@@ -158,7 +157,9 @@ m2.metric("Most likely dx",        result.predicted_dx.upper())
 m3.metric("Router confidence",     f"{result.confidence:.2%}")
 m4.metric("Malignant probability", f"{result.malignant_prob:.2%}")
 
-# Confidence tier preview (uses max(P(benign), P(malignant)))
+if is_vgg:
+    st.caption("⚠️ VGG16 confidence is uncalibrated (no temperature scaling). Treat confidence scores as approximate.")
+
 conf = result.confidence
 if conf < config.ROUTER_LOW_MAX:
     tier_label, tier_color = "LOW — genuinely uncertain, would reject", "red"
@@ -192,21 +193,18 @@ for i, (label, prob) in enumerate(zip(result.dx_labels, result.dx_probs)):
     is_top = (label == result.predicted_dx)
     is_mal = (label in MALIGNANT_DX)
     tag    = " ⬅ predicted" if is_top else ""
-    badge  = " \U0001f534" if is_mal else " \U0001f7e2"
+    badge  = " 🔴" if is_mal else " 🟢"
     full   = DX_FULLNAMES.get(label, label)
     col.write(f"**{label.upper()}**{badge} — {full}{tag}")
     col.progress(float(prob), text=f"{prob:.2%}")
 
 st.divider()
 
-# ---------------------------------------------------------------------------
-# Binary collapse detail
-# ---------------------------------------------------------------------------
 with st.expander("Binary collapse detail"):
     for label, p in zip(config.BINARY_LABELS, result.binary_probs):
         st.write(f"- **{label}**: {p:.4f}")
         st.progress(float(p))
 
 st.divider()
-st.info("Want the full agentic report with diagnosis cross-reference and literature evidence? → Go to **Report** in the sidebar.")
+st.info("Want the full agentic report? → Go to **Report** in the sidebar.")
 st.caption(config.CLINICAL_DISCLAIMER)

@@ -30,6 +30,12 @@ except Exception:
 
 st.set_page_config(page_title="Agentic Medical Imaging", layout="wide")
 
+# Force scrollbar always visible — prevents left/right layout shift (flickering)
+st.markdown(
+    "<style>html { overflow-y: scroll; }</style>",
+    unsafe_allow_html=True,
+)
+
 st.title("Agentic AI Medical Imaging System")
 st.caption("Academic prototype — clinical decision support, not a diagnostic tool.")
 

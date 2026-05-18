@@ -20,6 +20,7 @@ import config
 from src.input.image_loader import load_from_bytes
 
 st.set_page_config(page_title="Analyze", layout="wide")
+st.markdown("<style>html { overflow-y: scroll; }</style>", unsafe_allow_html=True)
 st.title("Phase 1 — Analyze")
 
 # ---------------------------------------------------------------------------

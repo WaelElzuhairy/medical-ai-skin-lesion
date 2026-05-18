@@ -25,6 +25,7 @@ import config
 from src.input.image_loader import load_from_bytes
 
 st.set_page_config(page_title="Agentic Report", layout="wide")
+st.markdown("<style>html { overflow-y: scroll; }</style>", unsafe_allow_html=True)
 st.title("Phase 2 — Agentic Report")
 st.caption("Full pipeline: model → router → agents → guard → report")
 

@@ -20,6 +20,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import config  # noqa: E402, F401  (imported so .env loads early)
 
+# Download model checkpoints from HF Hub if running in a cloud environment
+try:
+    import startup
+    startup.download_models()
+except Exception:
+    pass  # local dev: models already present
+
 
 st.set_page_config(page_title="Agentic Medical Imaging", layout="wide")
 

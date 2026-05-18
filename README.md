@@ -1,3 +1,12 @@
+---
+title: Agentic AI Medical Imaging System
+emoji: 🔬
+colorFrom: blue
+colorTo: purple
+sdk: docker
+pinned: false
+---
+
 # Agentic AI Medical Imaging System — Skin Lesion Classification
 
 An end-to-end clinical decision-support prototype that classifies dermatoscopic skin-lesion images across 7 classes (benign vs malignant), explains decisions via Grad-CAM, and routes cases through a fully agentic pipeline backed by a PubMed RAG corpus and a deterministic safety layer.
